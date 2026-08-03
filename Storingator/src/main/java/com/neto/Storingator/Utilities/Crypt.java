@@ -13,7 +13,7 @@ import java.util.Random;
 import com.neto.Storingator.Entities.Appuser;
 
 public class Crypt {
-    public static final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~`!@#$%^&*()-_=+[{]}\\|;:\'\",<.>/?";
+    public static final String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~`!@#$%^&*()-_=+[{]}|;:\'\",<.>/?";
     private static final int taglengh = 16;
     private static final int ivlength = 12;
 

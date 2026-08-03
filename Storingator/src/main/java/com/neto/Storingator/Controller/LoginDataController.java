@@ -3,6 +3,7 @@ package com.neto.Storingator.Controller;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import com.neto.Storingator.Entities.Activeusers;
 import com.neto.Storingator.Entities.Appuser;
@@ -42,6 +43,11 @@ public class LoginDataController {
         String passphrase = data.getPassphrase();
 
         Activeusers activeuser = acUsersRepository.getActiveUsersByUsername(acuser.getUsername());
+
+        if (Objects.isNull(activeuser)){
+            log.warn("User did not log in: {}", acuser.getUsername());
+            return "User is not logged in";
+        }
 
         if (!acuser.getLoginkey().equals(activeuser.getLoginkey())) {
             log.warn("Validation failed for user: {}", acuser.getUsername());
