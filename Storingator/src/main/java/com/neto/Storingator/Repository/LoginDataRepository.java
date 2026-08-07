@@ -8,7 +8,7 @@ public interface LoginDataRepository extends JpaRepository<Logindata, Integer> {
 
   List<Logindata> findByUsername(String username);
 
-  List<Logindata> findByUserseq(int userseq);
+  List<Logindata> findByUserSeq(int userSeq);
 
   Logindata findBySeq(int seq);
 }

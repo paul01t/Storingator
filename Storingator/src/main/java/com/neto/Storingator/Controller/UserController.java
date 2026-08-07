@@ -4,7 +4,7 @@ import com.neto.Storingator.Entities.Appuser;
 import com.neto.Storingator.Service.SessionService;
 import com.neto.Storingator.Service.UserService;
 import com.neto.Storingator.Utilities.SessionResponse;
-import com.neto.Storingator.Utilities.TempUser;
+import com.neto.Storingator.Entities.TempUser;
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 import org.slf4j.Logger;

@@ -1,4 +1,4 @@
-package com.neto.Storingator.Utilities;
+package com.neto.Storingator.Entities;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;

@@ -8,7 +8,7 @@ import com.neto.Storingator.Exceptions.UnauthorizedException;
 import com.neto.Storingator.Exceptions.UserAlreadyExistsException;
 import com.neto.Storingator.Utilities.Crypt;
 import com.neto.Storingator.Utilities.SessionResponse;
-import com.neto.Storingator.Utilities.TempUser;
+import com.neto.Storingator.Entities.TempUser;
 import com.neto.Storingator.Repository.ActiveUsersRepository;
 import com.neto.Storingator.Repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;

@@ -77,7 +77,7 @@ public class LoginDataController {
         Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
         log.info("Fetching login data for user: {}", activeuser.getUsername());
         List<TempLoginData> list = new ArrayList<>();
-        List<Logindata> ldList = logDataRepository.findByUserseq(activeuser.getUserseq());
+        List<Logindata> ldList = logDataRepository.findByUserSeq(activeuser.getUserseq());
 
         for (int i = 0; i < ldList.size(); i++) {
             TempLoginData temp = new TempLoginData();
