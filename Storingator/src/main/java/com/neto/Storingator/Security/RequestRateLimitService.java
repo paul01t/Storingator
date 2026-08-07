@@ -37,13 +37,12 @@ public class RequestRateLimitService {
         boolean allowed;
         synchronized (w) {
             if (now - w.windowStart >= ws) {
-                w.windowStart = now;
-                w.count = 1;
-                allowed = 1 <= max;
-            } else {
-                w.count++;
-                allowed = w.count <= max;
+                if (windows.remove(key, w)) {
+                    return 1 <= max;
+                }
             }
+            w.count++;
+            allowed = w.count <= max;
         }
         return allowed;
     }

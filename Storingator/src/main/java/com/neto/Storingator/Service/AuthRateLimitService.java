@@ -17,17 +17,24 @@ public class AuthRateLimitService {
     public void check(String key, int maxAttempts, Duration window) {
         long now = System.currentTimeMillis();
         Deque<Long> deque = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
-        prune(deque, now, window);
-        if (deque.size() >= maxAttempts) {
-            throw new TooManyRequestsException("Too many attempts. Please try again later.");
+        synchronized (deque) {
+            prune(deque, now, window);
+            if (deque.isEmpty()) {
+                windows.remove(key, deque);
+            }
+            if (deque.size() >= maxAttempts) {
+                throw new TooManyRequestsException("Too many attempts. Please try again later.");
+            }
         }
     }
 
     public void recordFailure(String key, Duration window) {
         long now = System.currentTimeMillis();
         Deque<Long> deque = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
-        prune(deque, now, window);
-        deque.addLast(now);
+        synchronized (deque) {
+            prune(deque, now, window);
+            deque.addLast(now);
+        }
     }
 
     private void prune(Deque<Long> deque, long now, Duration window) {

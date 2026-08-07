@@ -28,4 +28,6 @@ public class Logindata {
   private byte[] nonce;
 
   private String extraInfo;
+
+  private Boolean encryptOnDevice;
 }
