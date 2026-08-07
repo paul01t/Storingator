@@ -14,21 +14,17 @@ public class Appuser {
 
   private String username;
 
-  private byte[] password;
+  private String password;
 
   private String email;
 
-  private byte[] nonce;
-
-  private String pswkey;
-
   private String timestamp;
+
+  private byte[] vaultsalt;
 
   public Appuser() {
     this.timestamp = System.currentTimeMillis()+"";
-    String characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789~`!@#$%^&*()-_=+[{]}\\|;:\'\",<.>/?";
-    String pwd = Crypt.randomPassphrase(50, characters);
-    this.pswkey = pwd;
+    this.vaultsalt = Crypt.getRandomSalt();
   }
 
   public Integer getId() {
@@ -51,24 +47,12 @@ public class Appuser {
     this.email = email;
   }
 
-  public byte[] getPassword() {
+  public String getPassword() {
     return password;
   }
 
-  public void setPassword(byte[] password) {
+  public void setPassword(String password) {
     this.password = password;
-  }
-
-  public byte[] getNonce() {
-    return nonce;
-  }
-
-  public void setNonce(byte[] nonce) {
-    this.nonce = nonce;
-  }
-
-  public String getPswKey() {
-    return pswkey;
   }
 
   public String getTimestamp() {
@@ -79,8 +63,12 @@ public class Appuser {
     this.timestamp = timestamp;
   }
 
-  public void setPswkey(String pswkey) {
-    this.pswkey = pswkey;
+  public byte[] getVaultSalt() {
+    return vaultsalt;
+  }
+
+  public void setVaultSalt(byte[] vaultsalt) {
+    this.vaultsalt = vaultsalt;
   }
 
   @Override

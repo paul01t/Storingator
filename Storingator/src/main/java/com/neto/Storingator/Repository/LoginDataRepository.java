@@ -4,7 +4,7 @@ import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import com.neto.Storingator.Entities.Logindata;
 
-public interface LoginDataRepository extends JpaRepository<Logindata, Long> {
+public interface LoginDataRepository extends JpaRepository<Logindata, Integer> {
 
   List<Logindata> findByUsername(String username);
 

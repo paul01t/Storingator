@@ -1,19 +1,14 @@
 package com.neto.Storingator.Utilities;
 
-import com.neto.Storingator.Entities.Activeusers;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public class NewData {
-    private Activeusers ac;
+    @NotNull(message = "Login data is required")
     private TempLoginData tmpLoginData;
+
+    @NotBlank(message = "Passphrase is required")
     private String passphrase;
-
-    public Activeusers getAc() {
-        return ac;
-    }
-
-    public void setAc(Activeusers ac) {
-        this.ac = ac;
-    }
 
     public TempLoginData getTmpLoginData() {
         return tmpLoginData;

@@ -3,24 +3,26 @@ package com.neto.Storingator.Controller;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 import com.neto.Storingator.Entities.Activeusers;
 import com.neto.Storingator.Entities.Appuser;
 import com.neto.Storingator.Entities.Logindata;
+import com.neto.Storingator.Exceptions.BadRequestException;
+import com.neto.Storingator.Exceptions.UnauthorizedException;
+import com.neto.Storingator.Exceptions.VaultOperationFailed;
+import com.neto.Storingator.Service.SessionService;
 import com.neto.Storingator.Utilities.Crypt;
 import com.neto.Storingator.Utilities.NewData;
 import com.neto.Storingator.Utilities.TempLoginData;
-import com.neto.Storingator.Utilities.TempUser;
-import com.neto.Storingator.Repository.ActiveUsersRepository;
 import com.neto.Storingator.Repository.LoginDataRepository;
 import com.neto.Storingator.Repository.UserRepository;
+import jakarta.validation.Valid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -33,58 +35,49 @@ public class LoginDataController {
     @Autowired
     private LoginDataRepository logDataRepository;
     @Autowired
-    private ActiveUsersRepository acUsersRepository;
+    private SessionService sessionService;
 
     @PostMapping("/Data/New")
-    public String createLoginData(@RequestBody NewData data) {
+    public String createLoginData(@RequestHeader("Authorization") String bearerToken,
+                                  @Valid @RequestBody NewData data) {
         log.info("Received new login data request");
-        Activeusers acuser = data.getAc();
+        Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
         TempLoginData newLoginData = data.getTmpLoginData();
-        String passphrase = data.getPassphrase();
-
-        Activeusers activeuser = acUsersRepository.getActiveUsersByUsername(acuser.getUsername());
-
-        if (Objects.isNull(activeuser)){
-            log.warn("User did not log in: {}", acuser.getUsername());
-            return "User is not logged in";
-        }
-
-        if (!acuser.getLoginkey().equals(activeuser.getLoginkey())) {
-            log.warn("Validation failed for user: {}", acuser.getUsername());
-            return "Validation Failed" + acuser.getSeq() + " ," + activeuser.getSeq();
+        if (newLoginData.getPassword() == null || newLoginData.getPassword().isEmpty()) {
+            throw new BadRequestException("Password is required");
         }
 
         Appuser dbUser = userRepository.findByUsername(activeuser.getUsername());
-        TempUser tmpuser = new TempUser();
-        tmpuser.setClearPassword(passphrase);
 
         Logindata loginData = new Logindata();
         loginData.setUsername(newLoginData.getUsername());
         loginData.setEmail(newLoginData.getEmail());
         loginData.setExtraInfo(newLoginData.getExtrainfo());
         loginData.setPlatform(newLoginData.getPlatform());
-        loginData.setUserSeq(dbUser.getId());
+        loginData.setUserSeq(activeuser.getUserseq());
 
         try {
             byte[] nonceBT = Crypt.getRandomNonce();
-            byte[] key = Crypt.keyGenerateEncodedFromUser(dbUser, tmpuser);
+            byte[] key = Crypt.deriveKeyFromPassphrase(data.getPassphrase(), dbUser.getVaultSalt());
             byte[] passwordByte = newLoginData.getPassword().getBytes(StandardCharsets.UTF_8);
             loginData.setPassword(Crypt.encrypt(passwordByte, key, nonceBT));
             loginData.setNonce(nonceBT);
         } catch (Exception e) {
-            log.error("Failed to encrypt and save login data for user: {}", dbUser.getUsername(), e);
+            log.error("Failed to encrypt login data for user: {}", dbUser.getUsername(), e);
+            throw new VaultOperationFailed("Failed to encrypt login data");
         }
 
         logDataRepository.save(loginData);
         log.info("Login data saved successfully");
-        return "Post Request Received";
+        return "Login data saved";
     }
 
-    @GetMapping("/Data/GetLoginData")
-    public List<TempLoginData> GetLoginData(@RequestBody Activeusers user) {
-        log.info("Fetching login data for user: {}", user.getUsername());
+    @PostMapping("/Data/GetLoginData")
+    public List<TempLoginData> GetLoginData(@RequestHeader("Authorization") String bearerToken) {
+        Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
+        log.info("Fetching login data for user: {}", activeuser.getUsername());
         List<TempLoginData> list = new ArrayList<>();
-        List<Logindata> ldList = logDataRepository.findByUserseq(user.getUserseq());
+        List<Logindata> ldList = logDataRepository.findByUserseq(activeuser.getUserseq());
 
         for (int i = 0; i < ldList.size(); i++) {
             TempLoginData temp = new TempLoginData();
@@ -101,29 +94,27 @@ public class LoginDataController {
         return list;
     }
 
-    @GetMapping("/Data/GetClearPassword")
-    public TempLoginData GetClearPassword(@RequestBody NewData data) {
+    @PostMapping("/Data/GetClearPassword")
+    public TempLoginData GetClearPassword(@RequestHeader("Authorization") String bearerToken,
+                                          @Valid @RequestBody NewData data) {
         log.info("Fetching clear password for seq: {}", data.getTmpLoginData().getSeq());
-        Activeusers acuser = data.getAc();
-        Activeusers activeuser = acUsersRepository.getActiveUsersByUsername(acuser.getUsername());
-
-        if (!acuser.getLoginkey().equals(activeuser.getLoginkey())) {
-            log.warn("Validation failed for user: {}", acuser.getUsername());
-            TempLoginData fail = new TempLoginData();
-            fail.setUsername("Failed!");
-            return fail;
-        }
+        Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
 
         TempLoginData temp = data.getTmpLoginData();
         Logindata ldData = logDataRepository.findBySeq(data.getTmpLoginData().getSeq());
-        Appuser dbUser = userRepository.findByUsername(data.getAc().getUsername());
+
+        if (ldData == null || !ldData.getUserSeq().equals(activeuser.getUserseq())) {
+            log.warn("Ownership check failed for seq: {} and user: {}", data.getTmpLoginData().getSeq(), activeuser.getUsername());
+            throw new UnauthorizedException("Not authorized to access this login data");
+        }
+
+        Appuser dbUser = userRepository.findByUsername(activeuser.getUsername());
         try {
-            TempUser tmpuser = new TempUser();
-            tmpuser.setClearPassword(data.getPassphrase());
-            byte[] key = Crypt.keyGenerateEncodedFromUser(dbUser, tmpuser);
+            byte[] key = Crypt.deriveKeyFromPassphrase(data.getPassphrase(), dbUser.getVaultSalt());
             temp.setPassword(Crypt.decrypt(ldData.getPassword(), key, ldData.getNonce()));
         } catch (Exception e) {
             log.error("Failed to decrypt password for seq: {}", data.getTmpLoginData().getSeq(), e);
+            throw new BadRequestException("Could not decrypt login data. Check your passphrase.");
         }
 
         return temp;
