@@ -7,14 +7,19 @@ import com.neto.Storingator.Exceptions.NewUserCreationFailed;
 import com.neto.Storingator.Exceptions.UnauthorizedException;
 import com.neto.Storingator.Exceptions.UserAlreadyExistsException;
 import com.neto.Storingator.Utilities.Crypt;
+import com.neto.Storingator.Utilities.ChangePasswordRequest;
+import com.neto.Storingator.Utilities.DeleteUserRequest;
 import com.neto.Storingator.Utilities.SessionResponse;
 import com.neto.Storingator.Entities.TempUser;
 import com.neto.Storingator.Repository.ActiveUsersRepository;
+import com.neto.Storingator.Repository.LoginDataRepository;
 import com.neto.Storingator.Repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.util.Locale;
@@ -35,6 +40,19 @@ public class UserService {
     private ActiveUsersRepository acUsersRepository;
     @Autowired
     private AuthRateLimitService rateLimitService;
+    @Autowired
+    private LoginDataRepository loginDataRepository;
+    @Autowired
+    private SessionService sessionService;
+
+    private String dummyHash;
+
+    private String dummyHash() {
+        if (dummyHash == null) {
+            dummyHash = passwordEncoder.encode("timing-equalizer");
+        }
+        return dummyHash;
+    }
 
     public void createNewUser(Appuser user, TempUser tmpuser) {
         String username = tmpuser.getUsername().trim();
@@ -64,6 +82,9 @@ public class UserService {
             user.setEmail(email);
             user.setPassword(passwordEncoder.encode(password));
             userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            log.warn("Duplicate user signup detected: {}", username);
+            throw new UserAlreadyExistsException("Username or email already taken");
         } catch (Exception e) {
             log.error("Failed to create user: {}", username, e);
             throw new NewUserCreationFailed("New user creation failed!");
@@ -71,6 +92,7 @@ public class UserService {
         log.info("User created successfully: {}", username);
     }
 
+    @Transactional
     public SessionResponse signIn(TempUser tmpuser) {
         String username = tmpuser.getUsername().trim();
         log.info("Sign in attempt for user: {}", username);
@@ -78,6 +100,8 @@ public class UserService {
 
         Appuser dbUser = userRepository.findByUsername(username);
         if (dbUser == null) {
+            passwordEncoder.matches(tmpuser.getClearPassword(), dummyHash());
+            rateLimitService.recordFailure("signin:" + username.toLowerCase(Locale.ROOT), SIGNIN_WINDOW);
             throw new UnauthorizedException("Invalid username or password");
         }
 
@@ -98,5 +122,35 @@ public class UserService {
         acUsersRepository.save(newAU);
         log.info("Sign in successful for user: {}", username);
         return new SessionResponse(dbUser.getUsername(), newAU.getLoginkey());
+    }
+
+    @Transactional
+    public void changePassword(String bearerToken, ChangePasswordRequest request) {
+        Activeusers active = activeSession(bearerToken);
+        Appuser dbUser = userRepository.findByUsername(active.getUsername());
+        if (dbUser == null || !passwordEncoder.matches(request.getCurrentPassword(), dbUser.getPassword())) {
+            throw new UnauthorizedException("Invalid credentials");
+        }
+        dbUser.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(dbUser);
+        acUsersRepository.deleteByUserseq(dbUser.getId());
+        log.info("Password changed for user: {}", dbUser.getUsername());
+    }
+
+    @Transactional
+    public void deleteUser(String bearerToken, DeleteUserRequest request) {
+        Activeusers active = activeSession(bearerToken);
+        Appuser dbUser = userRepository.findByUsername(active.getUsername());
+        if (dbUser == null || !passwordEncoder.matches(request.getPassword(), dbUser.getPassword())) {
+            throw new UnauthorizedException("Invalid credentials");
+        }
+        loginDataRepository.deleteByUserSeq(dbUser.getId());
+        acUsersRepository.deleteByUserseq(dbUser.getId());
+        userRepository.delete(dbUser);
+        log.info("User deleted: {}", dbUser.getUsername());
+    }
+
+    private Activeusers activeSession(String bearerToken) {
+        return sessionService.authenticateFromBearer(bearerToken);
     }
 }

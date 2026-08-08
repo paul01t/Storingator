@@ -31,7 +31,7 @@ public class BearerAuthFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String header = request.getHeader("Authorization");
 
-        if (header != null && header.startsWith("Bearer ")) {
+        if (header != null && header.regionMatches(true, 0, "Bearer ", 0, 7)) {
             try {
                 Activeusers active = sessionService.authenticateFromBearer(header);
                 UsernamePasswordAuthenticationToken authentication =

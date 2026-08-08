@@ -25,9 +25,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 @RestController
+@RequestMapping("/api/v1/Data")
 public class LoginDataController {
 
     private static final Logger log = LoggerFactory.getLogger(LoginDataController.class);
@@ -39,7 +43,7 @@ public class LoginDataController {
     @Autowired
     private SessionService sessionService;
 
-    @PostMapping("/Data/New")
+    @PostMapping("/New")
     public String createLoginData(@RequestHeader("Authorization") String bearerToken,
                                   @Valid @RequestBody NewData data) {
         log.info("Received new login data request");
@@ -62,7 +66,7 @@ public class LoginDataController {
         return "Login data saved";
     }
 
-    @PostMapping("/Data/Update")
+    @PostMapping("/Update")
     public String updateLoginData(@RequestHeader("Authorization") String bearerToken,
                                   @Valid @RequestBody NewData data) {
         log.info("Received update login data request");
@@ -89,9 +93,9 @@ public class LoginDataController {
         return "Login data updated";
     }
 
-    @DeleteMapping("/Data/Delete/{seq}")
+    @DeleteMapping("/Delete/{seq}")
     public String deleteData(@RequestHeader("Authorization") String bearerToken,
-                             @PathVariable int seq) {
+                             @PathVariable UUID seq) {
         log.info("Received delete login data request for seq: {}", seq);
         Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
 
@@ -137,7 +141,7 @@ public class LoginDataController {
         }
     }
 
-    @PostMapping("/Data/GetLoginData")
+    @PostMapping("/GetLoginData")
     public List<TempLoginData> GetLoginData(@RequestHeader("Authorization") String bearerToken) {
         Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
         log.info("Fetching login data for user: {}", activeuser.getUsername());
@@ -165,7 +169,7 @@ public class LoginDataController {
         return list;
     }
 
-    @PostMapping("/Data/GetClearPassword")
+    @PostMapping("/GetClearPassword")
     public TempLoginData GetClearPassword(@RequestHeader("Authorization") String bearerToken,
                                           @Valid @RequestBody NewData data) {
         log.info("Fetching clear password for seq: {}", data.getTmpLoginData().getSeq());
@@ -184,6 +188,9 @@ public class LoginDataController {
             byte[] pw = ldData.getPassword();
             temp.setPassword(pw == null ? "" : new String(pw, StandardCharsets.UTF_8));
             return temp;
+        }
+        if (data.getPassphrase() == null || data.getPassphrase().isEmpty()) {
+            throw new BadRequestException("Passphrase is required to decrypt login data");
         }
         try {
             byte[] key = Crypt.deriveKeyFromPassphrase(data.getPassphrase(), dbUser.getVaultSalt());

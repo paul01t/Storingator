@@ -62,4 +62,10 @@ public class CustomExceptionHandler {
         log.error("Vault operation failed", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ex.getMessage());
     }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<String> handleUnexpected(Exception ex) {
+        log.error("Unhandled exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("An unexpected error occurred");
+    }
 }

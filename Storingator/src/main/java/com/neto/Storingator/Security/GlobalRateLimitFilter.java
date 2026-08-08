@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
@@ -18,8 +19,10 @@ import java.time.Duration;
 public class GlobalRateLimitFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalRateLimitFilter.class);
-    private static final int MAX_REQUESTS_PER_MINUTE = 20;
     private static final Duration WINDOW = Duration.ofMinutes(1);
+
+    @Value("${app.rate-limit.per-minute:20}")
+    private int maxRequestsPerMinute;
 
     @Autowired
     private RequestRateLimitService requestRateLimitService;
@@ -33,7 +36,7 @@ public class GlobalRateLimitFilter extends OncePerRequestFilter {
         String clientIp = clientIpResolver.resolve(request);
         String key = "ip:" + clientIp;
 
-        if (!requestRateLimitService.allow(key, MAX_REQUESTS_PER_MINUTE, WINDOW)) {
+        if (!requestRateLimitService.allow(key, maxRequestsPerMinute, WINDOW)) {
             log.warn("Rate limit exceeded for IP: {}", clientIp);
             response.setStatus(429);
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);

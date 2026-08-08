@@ -5,6 +5,7 @@ import com.neto.Storingator.Exceptions.UnauthorizedException;
 import com.neto.Storingator.Repository.ActiveUsersRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ public class SessionService {
     @Autowired
     private ActiveUsersRepository acUsersRepository;
 
+    @Transactional
     public Activeusers authenticateFromBearer(String bearerToken) {
         String loginkey = parseToken(bearerToken);
         Activeusers active = acUsersRepository.findByLoginkey(loginkey);
@@ -31,6 +33,7 @@ public class SessionService {
         return active;
     }
 
+    @Transactional
     public void logout(String bearerToken) {
         Activeusers active = authenticateFromBearer(bearerToken);
         acUsersRepository.deleteByUserseq(active.getUserseq());

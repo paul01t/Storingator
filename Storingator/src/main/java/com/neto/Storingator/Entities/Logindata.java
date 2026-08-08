@@ -7,15 +7,17 @@ import jakarta.persistence.Id;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.util.UUID;
+
 @Entity
 @Getter
 @Setter
 public class Logindata {
   @Id
-  @GeneratedValue(strategy=GenerationType.AUTO)
-  private Integer seq;
+  @GeneratedValue(strategy=GenerationType.UUID)
+  private UUID seq;
 
-  private Integer userSeq;
+  private UUID userSeq;
 
   private String platform;
 

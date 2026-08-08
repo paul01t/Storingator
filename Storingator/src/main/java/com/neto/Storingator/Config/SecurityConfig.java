@@ -59,9 +59,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/User/New").access((authentication, context) ->
-                        new AuthorizationDecision(isRegistrationIpAllowed(context.getRequest())))
-                .requestMatchers("/User/Signin", "/User/").permitAll()
+                .requestMatchers("/api/v1/User/New", "/api/v1/User/ChangePassword", "/api/v1/User/Delete").access((authentication, context) ->
+                        new AuthorizationDecision(isRequestIpAllowed(context.getRequest())))
+                .requestMatchers("/api/v1/User/Signin", "/api/v1/User/", "/health").permitAll()
                 .anyRequest().authenticated())
             .headers(headers -> headers
                 .frameOptions(frame -> frame.deny())
@@ -99,7 +99,7 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOriginPatterns(List.of(allowedOriginPatterns.split(",")));
-        config.setAllowedMethods(List.of("GET", "POST", "OPTIONS"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setMaxAge(3600L);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -107,7 +107,7 @@ public class SecurityConfig {
         return source;
     }
 
-    private boolean isRegistrationIpAllowed(HttpServletRequest request) {
+    private boolean isRequestIpAllowed(HttpServletRequest request) {
         String ip = clientIpResolver.resolve(request);
         boolean allowed = false;
         for (String entry : registrationAllowedIps.split(",")) {
@@ -115,15 +115,15 @@ public class SecurityConfig {
                 IpAddressMatcher matcher = new IpAddressMatcher(entry.trim());
                 if (matcher.matches(ip)) {
                     allowed = true;
-                    log.info("Registration IP {} matched allowlist {}", ip, entry.trim());
+                    log.info("Request IP {} matched allowlist {}", ip, entry.trim());
                     break;
                 }
             } catch (IllegalArgumentException e) {
-                log.warn("Ignoring invalid allowed registration IP: {}", entry);
+                log.warn("Ignoring invalid allowed IP: {}", entry);
             }
         }
         if (!allowed) {
-            log.warn("Registration denied for IP '{}' from {}. Allowed: {}",
+            log.warn("Request denied for IP '{}' from {}. Allowed: {}",
                     ip, request.getRemoteAddr(), registrationAllowedIps);
         }
         return allowed;
