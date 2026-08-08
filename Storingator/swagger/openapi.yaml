@@ -1,0 +1,671 @@
+openapi: 3.0.3
+info:
+  title: Storingator API
+  version: 1.0.0
+  description: |
+    Personal password manager backend.
+
+    Authentication: opaque bearer tokens issued by `/api/v1/User/Signin`.
+    Tokens are sent as `Authorization: Bearer <token>`. Sessions live for
+    30 minutes and are invalidated on logout, password change, or account
+    deletion (the server persists only a SHA-256 hash of the token).
+
+    Access control:
+    * `/api/v1/User/New`, `/api/v1/User/ChangePassword` and `/api/v1/User/Delete`
+      are restricted to IPs in `app.security.registration-allowed-ips`
+      (localhost by default).
+    * Record ownership is scoped per user; cross-user access returns 401.
+
+    Encryption:
+    * Server-encrypted vault entries: client sends a `passphrase`; the server
+      derives a key (PBKDF2-HMAC-SHA256) and stores AES-256-GCM ciphertext.
+      The server can decrypt those entries whenever the passphrase is supplied.
+    * Device-encrypted entries (`encryptOnDevice: true`): the server only
+      stores opaque bytes and never sees the plaintext/passphrase.
+
+    Notes use the same two modes. Note content is capped at 4096 characters
+    (AES-256-GCM over UTF-8, plus a fresh random 12-byte nonce per record).
+servers:
+  - url: https://localhost:8443/api/v1
+    description: Local development (HTTPS)
+tags:
+  - name: User
+    description: Account lifecycle and sessions
+  - name: Data
+    description: Encrypted vault records
+  - name: Note
+    description: Encrypted notes
+  - name: Health
+    description: Liveness
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      operationId: health
+      responses:
+        "200":
+          description: Service is up
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: OK
+
+  /User:
+    get:
+      tags: [User]
+      summary: Session information banner
+      operationId: userIndex
+      security: []
+      responses:
+        "200":
+          description: Human-readable startup message
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Initiate Session by giving User and Password.
+
+  /User/New:
+    post:
+      tags: [User]
+      summary: Create an account
+      description: Restricted to allowed IPs (`registration-allowed-ips`).
+      operationId: createUser
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TempUser"
+      responses:
+        "201":
+          description: User created
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: User created
+        "400":
+          $ref: "#/components/responses/TextError"
+        "409":
+          description: Username or email already taken
+          content:
+            text/plain:
+              schema:
+                type: string
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /User/Signin:
+    post:
+      tags: [User]
+      summary: Sign in and obtain a session token
+      operationId: signIn
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TempUser"
+      responses:
+        "200":
+          description: Returns the opaque bearer loginkey
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          description: Invalid username or password
+        "429":
+          $ref: "#/components/responses/RateLimited"
+
+  /User/Logout:
+    post:
+      tags: [User]
+      summary: Invalidate the current session token
+      operationId: logout
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Session invalidated
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Logged out
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /User/Me:
+    get:
+      tags: [User]
+      summary: Get the username for the current session
+      operationId: me
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current session identity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /User/ChangePassword:
+    post:
+      tags: [User]
+      summary: Change the account password
+      description: |
+        Verifies the current password, updates the stored hash, and invalidates
+        every active session for the account. Restricted to allowed IPs.
+      operationId: changePassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordRequest"
+      responses:
+        "200":
+          description: Password changed
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Password changed; please sign in again
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /User/Delete:
+    post:
+      tags: [User]
+      summary: Delete the account and all associated vault data
+      description: |
+        Requires the current password. Removes vault records, sessions, and the
+        account itself. This is permanent. Restricted to allowed IPs.
+      operationId: deleteUser
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteUserRequest"
+      responses:
+        "200":
+          description: Account deleted
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: User deleted
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /Data/New:
+    post:
+      tags: [Data]
+      summary: Create a vault record
+      description: |
+        If `encryptOnDevice` is true, `password` is stored as opaque bytes and no
+        passphrase is used. Otherwise `passphrase` is required and the password is
+        encrypted on the server (AES-256-GCM) under a key derived from it.
+      operationId: createLoginData
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewData"
+      responses:
+        "200":
+          description: Login data saved
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Login data saved
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /Data/Update:
+    post:
+      tags: [Data]
+      summary: Update an existing vault record
+      description: The record must belong to the current user.
+      operationId: updateLoginData
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewData"
+      responses:
+        "200":
+          description: Login data updated
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Login data updated
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /Data/Delete/{seq}:
+    delete:
+      tags: [Data]
+      summary: Delete a vault record
+      description: The record must belong to the current user.
+      operationId: deleteLoginData
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seq
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Login data deleted
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Login data deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /Data/GetLoginData:
+    post:
+      tags: [Data]
+      summary: List the vault records for the current user
+      description: |
+        Passwords are returned masked (`*************`) for server-encrypted
+        entries and verbatim for device-encrypted entries.
+      operationId: getLoginData
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Vault entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TempLoginData"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /Data/GetClearPassword:
+    post:
+      tags: [Data]
+      summary: Decrypt a single vault password
+      description: |
+        Supply the record `seq` and the `passphrase` used at creation time
+        (ignored for device-encrypted entries). The record must belong to the
+        current user.
+      operationId: getClearPassword
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewData"
+      responses:
+        "200":
+          description: Decrypted password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TempLoginData"
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /Note/New:
+    post:
+      tags: [Note]
+      summary: Create an encrypted note
+      description: |
+        If `encryptOnDevice` is true, `content` is stored as opaque bytes and no
+        passphrase is used. Otherwise `passphrase` is required and the content is
+        encrypted on the server (AES-256-GCM) under a key derived from it.
+      operationId: createNote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteData"
+      responses:
+        "200":
+          description: Note saved
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Note saved
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /Note/Update:
+    post:
+      tags: [Note]
+      summary: Update an existing note
+      description: The note must belong to the current user.
+      operationId: updateNote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteData"
+      responses:
+        "200":
+          description: Note updated
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Note updated
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /Note/Delete/{seq}:
+    delete:
+      tags: [Note]
+      summary: Delete a note
+      description: The note must belong to the current user.
+      operationId: deleteNote
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: seq
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Note deleted
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: Note deleted
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /Note/GetNotes:
+    post:
+      tags: [Note]
+      summary: List the decrypted notes for the current user
+      description: |
+        Note content is always returned decrypted. Server-encrypted notes
+        require the `passphrase` in the request body; it is ignored for
+        device-encrypted notes.
+      operationId: getNotes
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteData"
+      responses:
+        "200":
+          description: Decrypted notes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TempNote"
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /Note/GetNote:
+    post:
+      tags: [Note]
+      summary: Decrypt a single note
+      description: |
+        Supply the note `seq` and the `passphrase` used at creation time
+        (ignored for device-encrypted notes). The note must belong to the
+        current user.
+      operationId: getNote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NoteData"
+      responses:
+        "200":
+          description: Decrypted note
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TempNote"
+        "400":
+          $ref: "#/components/responses/TextError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Opaque session token issued by /api/v1/User/Signin.
+
+  responses:
+    Unauthorized:
+      description: Missing, invalid, or expired bearer token
+      content:
+        text/plain:
+          schema:
+            type: string
+    Forbidden:
+      description: Authenticated but not permitted (e.g. record belongs to another user)
+      content:
+        text/plain:
+          schema:
+            type: string
+    TextError:
+      description: Validation or business-rule error
+      content:
+        text/plain:
+          schema:
+            type: string
+    RateLimited:
+      description: Too many requests
+      content:
+        text/plain:
+          schema:
+            type: string
+
+  schemas:
+    TempUser:
+      type: object
+      required:
+        - username
+        - clearPassword
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          description: Unique account name
+        email:
+          type: string
+          format: email
+          maxLength: 128
+          description: Unique email; required at registration, ignored at sign-in
+        clearPassword:
+          type: string
+          maxLength: 72
+          description: Plaintext password (bcrypt-limit; the server only stores a hash)
+
+    SessionResponse:
+      type: object
+      properties:
+        username:
+          type: string
+        loginkey:
+          type: string
+          description: Opaque bearer token from /User/Signin; optional elsewhere
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - currentPassword
+        - newPassword
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          maxLength: 72
+
+    DeleteUserRequest:
+      type: object
+      required:
+        - password
+      properties:
+        password:
+          type: string
+          description: Current account password re-auth
+
+    NewData:
+      type: object
+      required:
+        - tmpLoginData
+      properties:
+        tmpLoginData:
+          $ref: "#/components/schemas/TempLoginData"
+        passphrase:
+          type: string
+          description: Used to encrypt/decrypt server-side records; omit for device-encrypted
+
+    TempLoginData:
+      type: object
+      properties:
+        seq:
+          type: string
+          format: uuid
+          description: Record id; required for Update/GetClearPassword/Delete
+        platform:
+          type: string
+          maxLength: 128
+          example: github
+        username:
+          type: string
+          maxLength: 256
+          description: Account name at the platform
+        email:
+          type: string
+          format: email
+          maxLength: 128
+        password:
+          type: string
+          maxLength: 4096
+          description: |
+            Create/decrypt: the password. On /GetLoginData it is masked
+            (server-encrypted) or returned verbatim (device-encrypted).
+        extrainfo:
+          type: string
+          maxLength: 4096
+        encryptOnDevice:
+          type: boolean
+          description: Opaque-bytes mode; with true, the server never encrypts or decrypts
+
+    NoteData:
+      type: object
+      required:
+        - tmpNote
+      properties:
+        tmpNote:
+          $ref: "#/components/schemas/TempNote"
+        passphrase:
+          type: string
+          description: Used to encrypt/decrypt server-side notes; omit for device-encrypted
+
+    TempNote:
+      type: object
+      properties:
+        seq:
+          type: string
+          format: uuid
+          description: Note id; required for Update/GetNote/Delete
+        title:
+          type: string
+          maxLength: 255
+          example: Groceries
+        content:
+          type: string
+          maxLength: 4096
+          description: |
+            Create/decrypt: the note body. On /GetNotes and /GetNote the server
+            always returns the decrypted content (device-encrypted notes are
+            returned verbatim, without a passphrase).
+        encryptOnDevice:
+          type: boolean
+          description: Opaque-bytes mode; with true, the server never encrypts or decrypts
+        timestamp:
+          type: string
+          description: Creation time (epoch millis as a string)

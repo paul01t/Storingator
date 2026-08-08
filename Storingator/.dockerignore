@@ -1,0 +1,16 @@
+# Ignore anything that should never be baked into the image.
+.gradle
+build/
+.git
+HELP.md
+*.md
+.idea
+*.iml
+
+# Secrets / local-only files
+.env
+secrets/
+application.yaml
+storingator.pkcs12
+
+# Tests are compiled locally, not in the image

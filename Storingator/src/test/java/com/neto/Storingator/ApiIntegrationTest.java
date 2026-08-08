@@ -382,4 +382,208 @@ private String createVault(String token, String platform, String password, Strin
                                 "clearPassword", "pass123"))))
                 .andExpect(status().isUnauthorized());
     }
+
+    private String createNote(String token, String title, String content, String passphrase,
+                            boolean encryptOnDevice) throws Exception {
+        mvc.perform(post("/api/v1/Note/New")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", passphrase,
+                                "tmpNote", Map.of(
+                                        "title", title,
+                                        "content", content,
+                                        "encryptOnDevice", encryptOnDevice)))))
+                .andExpect(status().isOk());
+
+        MvcResult list = mvc.perform(post("/api/v1/Note/GetNotes")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("passphrase", passphrase))))
+                .andReturn();
+        String listContent = list.getResponse().getContentAsString();
+        List<Map<String, Object>> entries = JsonPath.read(listContent, "$");
+        for (Map<String, Object> entry : entries) {
+            if (title.equals(entry.get("title"))) {
+                return (String) entry.get("seq");
+            }
+        }
+        return null;
+    }
+
+    @Test
+    void invalidNoteWithoutContentRejected() throws Exception {
+        String username = uniq("notereq");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        mvc.perform(post("/api/v1/Note/New")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of("title", "empty")))))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void serverEncryptedNoteIsDecryptedOnList() throws Exception {
+        String username = uniq("notemaster");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        String seq = createNote(token, "todo", "Buy milk and groceries", "master", false);
+
+        mvc.perform(post("/api/v1/Note/GetNotes")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("passphrase", "master"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content").value("Buy milk and groceries"));
+
+        mvc.perform(post("/api/v1/Note/GetNote")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of("seq", seq)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("Buy milk and groceries"));
+    }
+
+    @Test
+    void serverEncryptedNoteListingRequiresPassphrase() throws Exception {
+        String username = uniq("note-nopass");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        createNote(token, "todo", "secret text", "master", false);
+
+        mvc.perform(post("/api/v1/Note/GetNotes")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void deviceEncryptedNoteReturnsRawContent() throws Exception {
+        String username = uniq("note-dev");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        String seq = createNote(token, "idea", "client encrypted idea", "unused", true);
+
+        mvc.perform(post("/api/v1/Note/GetNotes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].content").value("client encrypted idea"))
+                .andExpect(jsonPath("$[0].encryptOnDevice").value(true));
+
+        mvc.perform(post("/api/v1/Note/GetNote")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "unused",
+                                "tmpNote", Map.of("seq", seq)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("client encrypted idea"));
+    }
+
+    @Test
+    void updateChangesNoteContent() throws Exception {
+        String username = uniq("note-upd");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        String seq = createNote(token, "todo", "old content", "master", false);
+
+        mvc.perform(post("/api/v1/Note/Update")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of(
+                                        "seq", seq,
+                                        "title", "updated",
+                                        "content", "new content")))))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/v1/Note/GetNote")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of("seq", seq)))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").value("new content"))
+                .andExpect(jsonPath("$.title").value("updated"));
+    }
+
+    @Test
+    void deleteRemovesNote() throws Exception {
+        String username = uniq("note-del");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        String seq = createNote(token, "todo", "delete me", "master", false);
+
+        mvc.perform(delete("/api/v1/Note/Delete/" + seq)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/v1/Note/GetNotes").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size()").value(0));
+    }
+
+    @Test
+    void noteCrossUserAccessDenied() throws Exception {
+        String owner = uniq("note-owner");
+        register(owner, owner + "@x.com", "pass123");
+        String ownerToken = signin(owner, "pass123");
+        String seq = createNote(ownerToken, "private", "owner's secret", "master", false);
+
+        String intruder = uniq("note-intr");
+        register(intruder, intruder + "@x.com", "pass123");
+        String intruderToken = signin(intruder, "pass123");
+
+        mvc.perform(post("/api/v1/Note/GetNote")
+                        .header("Authorization", "Bearer " + intruderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of("seq", seq)))))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(post("/api/v1/Note/Update")
+                        .header("Authorization", "Bearer " + intruderToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "passphrase", "master",
+                                "tmpNote", Map.of("seq", seq, "content", "x")))))
+                .andExpect(status().isUnauthorized());
+
+        mvc.perform(delete("/api/v1/Note/Delete/" + seq)
+                        .header("Authorization", "Bearer " + intruderToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void deleteUserRemovesNotes() throws Exception {
+        String username = uniq("dnotes");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+        createNote(token, "todo", "delete with user", "master", false);
+
+        mvc.perform(post("/api/v1/User/Delete")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("password", "pass123"))))
+                .andExpect(status().isOk());
+
+        mvc.perform(post("/api/v1/User/Signin")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "username", username,
+                                "clearPassword", "pass123"))))
+                .andExpect(status().isUnauthorized());
+    }
 }

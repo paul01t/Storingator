@@ -7,8 +7,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 
 @Service
 public class SessionService {
@@ -21,7 +25,7 @@ public class SessionService {
     @Transactional
     public Activeusers authenticateFromBearer(String bearerToken) {
         String loginkey = parseToken(bearerToken);
-        Activeusers active = acUsersRepository.findByLoginkey(loginkey);
+        Activeusers active = acUsersRepository.findByLoginkey(hashToken(loginkey));
         if (active == null) {
             throw new UnauthorizedException("Invalid or expired session");
         }
@@ -31,6 +35,16 @@ public class SessionService {
             throw new UnauthorizedException("Session expired");
         }
         return active;
+    }
+
+    public static String hashToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
     }
 
     @Transactional

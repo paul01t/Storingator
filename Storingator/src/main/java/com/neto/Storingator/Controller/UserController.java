@@ -63,7 +63,6 @@ public class UserController {
         Activeusers active = sessionService.authenticateFromBearer(bearerToken);
         SessionResponse response = new SessionResponse();
         response.setUsername(active.getUsername());
-        response.setLoginkey(active.getLoginkey());
         return ResponseEntity.ok(response);
     }
 

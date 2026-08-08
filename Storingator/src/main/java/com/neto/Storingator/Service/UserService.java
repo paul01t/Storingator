@@ -13,6 +13,7 @@ import com.neto.Storingator.Utilities.SessionResponse;
 import com.neto.Storingator.Entities.TempUser;
 import com.neto.Storingator.Repository.ActiveUsersRepository;
 import com.neto.Storingator.Repository.LoginDataRepository;
+import com.neto.Storingator.Repository.NoteRepository;
 import com.neto.Storingator.Repository.UserRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +43,8 @@ public class UserService {
     private AuthRateLimitService rateLimitService;
     @Autowired
     private LoginDataRepository loginDataRepository;
+    @Autowired
+    private NoteRepository noteRepository;
     @Autowired
     private SessionService sessionService;
 
@@ -116,12 +119,13 @@ public class UserService {
         acUsersRepository.deleteByUserseq(dbUser.getId());
 
         Activeusers newAU = new Activeusers();
-        newAU.setLoginkey(Crypt.randomPassphrase(50, Crypt.characters));
+        String rawLoginkey = Crypt.randomPassphrase(50, Crypt.characters);
+        newAU.setLoginkey(SessionService.hashToken(rawLoginkey));
         newAU.setUserseq(dbUser.getId());
         newAU.setUsername(dbUser.getUsername());
         acUsersRepository.save(newAU);
         log.info("Sign in successful for user: {}", username);
-        return new SessionResponse(dbUser.getUsername(), newAU.getLoginkey());
+        return new SessionResponse(dbUser.getUsername(), rawLoginkey);
     }
 
     @Transactional
@@ -145,6 +149,7 @@ public class UserService {
             throw new UnauthorizedException("Invalid credentials");
         }
         loginDataRepository.deleteByUserSeq(dbUser.getId());
+        noteRepository.deleteByUserSeq(dbUser.getId());
         acUsersRepository.deleteByUserseq(dbUser.getId());
         userRepository.delete(dbUser);
         log.info("User deleted: {}", dbUser.getUsername());
