@@ -10,9 +10,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.servlet.NoHandlerFoundException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import java.util.Map;
 
 @ControllerAdvice
 public class CustomExceptionHandler {
@@ -61,6 +66,27 @@ public class CustomExceptionHandler {
     public ResponseEntity<String> handleVaultFailure(VaultOperationFailed ex) {
         log.error("Vault operation failed", ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(ex.getMessage());
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNoResourceFound(NoResourceFoundException ex) {
+        log.warn("Endpoint not found: {} {}", ex.getHttpMethod(), ex.getResourcePath());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Endpoint not found: " + ex.getResourcePath()));
+    }
+
+    @ExceptionHandler(NoHandlerFoundException.class)
+    public ResponseEntity<Map<String, String>> handleNoHandlerFound(NoHandlerFoundException ex) {
+        log.warn("Endpoint not found: {} {}", ex.getHttpMethod(), ex.getRequestURL());
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("error", "Endpoint not found: " + ex.getRequestURL()));
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, String>> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex) {
+        log.warn("Method not supported: {} for {}", ex.getMethod(), ex.getMessage());
+        return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
+                .body(Map.of("error", "Method not supported: " + ex.getMethod()));
     }
 
     @ExceptionHandler(Exception.class)

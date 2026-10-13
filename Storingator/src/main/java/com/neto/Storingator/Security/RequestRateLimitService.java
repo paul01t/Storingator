@@ -27,6 +27,7 @@ public class RequestRateLimitService {
         Window w = windows.get(key);
         if (w == null) {
             Window candidate = new Window(now);
+            candidate.count = 1;
             Window existing = windows.putIfAbsent(key, candidate);
             if (existing == null) {
                 return 1 <= max;
@@ -37,9 +38,9 @@ public class RequestRateLimitService {
         boolean allowed;
         synchronized (w) {
             if (now - w.windowStart >= ws) {
-                if (windows.remove(key, w)) {
-                    return 1 <= max;
-                }
+                w.windowStart = now;
+                w.count = 1;
+                return 1 <= max;
             }
             w.count++;
             allowed = w.count <= max;

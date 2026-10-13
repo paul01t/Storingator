@@ -30,6 +30,8 @@ import java.util.Locale;
 public class UserService {
     private static final Duration SIGNIN_WINDOW = Duration.ofMinutes(15);
     private static final int SIGNIN_MAX_ATTEMPTS = 5;
+    private static final Duration SIGNIN_GLOBAL_WINDOW = Duration.ofMinutes(15);
+    private static final int SIGNIN_GLOBAL_MAX_ATTEMPTS = 100;
     private static final Duration SIGNUP_WINDOW = Duration.ofHours(1);
     private static final int SIGNUP_MAX_ATTEMPTS = 5;
 
@@ -67,6 +69,8 @@ public class UserService {
         }
         rateLimitService.check("signup:" + username.toLowerCase(Locale.ROOT) + ":" + email.toLowerCase(Locale.ROOT),
                 SIGNUP_MAX_ATTEMPTS, SIGNUP_WINDOW);
+        rateLimitService.recordFailure("signup:" + username.toLowerCase(Locale.ROOT) + ":" + email.toLowerCase(Locale.ROOT),
+                SIGNUP_WINDOW);
 
         if (userRepository.findByUsername(username) != null) {
             throw new UserAlreadyExistsException("Username already taken");
@@ -99,7 +103,8 @@ public class UserService {
     public SessionResponse signIn(TempUser tmpuser) {
         String username = tmpuser.getUsername().trim();
         log.info("Sign in attempt for user: {}", username);
-        rateLimitService.check("signin:global", 100, Duration.ofMinutes(15));
+        rateLimitService.check("signin:global", SIGNIN_GLOBAL_MAX_ATTEMPTS, SIGNIN_GLOBAL_WINDOW);
+        rateLimitService.recordFailure("signin:global", SIGNIN_GLOBAL_WINDOW);
 
         Appuser dbUser = userRepository.findByUsername(username);
         if (dbUser == null) {
