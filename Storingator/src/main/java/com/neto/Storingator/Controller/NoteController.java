@@ -136,31 +136,12 @@ public class NoteController {
     }
 
     @PostMapping("/GetNotes")
-    public List<TempNote> GetNotes(@RequestHeader("Authorization") String bearerToken,
-                                   @RequestBody(required = false) NoteData data) {
+    public List<TempNote> GetNotes(@RequestHeader("Authorization") String bearerToken) {
         Activeusers activeuser = sessionService.authenticateFromBearer(bearerToken);
         log.info("Fetching notes for user: {}", activeuser.getUsername());
 
-        Appuser dbUser = userRepository.findByUsername(activeuser.getUsername());
         List<TempNote> list = new ArrayList<>();
         List<Note> noteList = noteRepository.findByUserSeq(activeuser.getUserseq());
-
-        boolean hasServerEncrypted = noteList.stream()
-                .anyMatch(note -> !Boolean.TRUE.equals(note.getEncryptOnDevice()));
-        String passphrase = data == null ? null : data.getPassphrase();
-        if (hasServerEncrypted && (passphrase == null || passphrase.isEmpty())) {
-            throw new BadRequestException("Passphrase is required to decrypt notes");
-        }
-
-        byte[] key = null;
-        if (hasServerEncrypted) {
-            try {
-                key = Crypt.deriveKeyFromPassphrase(passphrase, dbUser.getVaultSalt());
-            } catch (Exception e) {
-                log.error("Failed to derive key for user: {}", activeuser.getUsername(), e);
-                throw new VaultOperationFailed("Failed to decrypt notes");
-            }
-        }
 
         for (Note note : noteList) {
             TempNote temp = new TempNote();
@@ -171,13 +152,6 @@ public class NoteController {
             if (Boolean.TRUE.equals(note.getEncryptOnDevice())) {
                 byte[] content = note.getContent();
                 temp.setContent(content == null ? "" : new String(content, StandardCharsets.UTF_8));
-            } else {
-                try {
-                    temp.setContent(Crypt.decrypt(note.getContent(), key, note.getNonce()));
-                } catch (Exception e) {
-                    log.error("Failed to decrypt note for seq: {} and user: {}", note.getSeq(), activeuser.getUsername(), e);
-                    throw new BadRequestException("Could not decrypt notes. Check your passphrase.");
-                }
             }
             list.add(temp);
         }

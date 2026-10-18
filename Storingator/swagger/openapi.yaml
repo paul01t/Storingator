@@ -25,6 +25,8 @@ info:
 
     Notes use the same two modes. Note content is capped at 4096 characters
     (AES-256-GCM over UTF-8, plus a fresh random 12-byte nonce per record).
+    `/Note/GetNotes` lists a user's notes without decrypting; `/Note/GetNote`
+    decrypts a single note when the passphrase is supplied.
 servers:
   - url: https://localhost:8443/api/v1
     description: Local development (HTTPS)
@@ -448,31 +450,26 @@ paths:
   /Note/GetNotes:
     post:
       tags: [Note]
-      summary: List the decrypted notes for the current user
+      summary: List the notes for the current user (metadata only, no decryption)
       description: |
-        Note content is always returned decrypted. Server-encrypted notes
-        require the `passphrase` in the request body; it is ignored for
-        device-encrypted notes.
+        Returns every note owned by the caller with its metadata
+        (`title`, `seq`, `timestamp`, `encryptOnDevice`). No `passphrase` is
+        accepted or required and the server never decrypts here. `content` is
+        included only for device-encrypted notes; for server-encrypted notes it
+        is omitted and must be fetched with `/Note/GetNote`. Any request body is
+        ignored.
       operationId: getNotes
       security:
         - bearerAuth: []
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/NoteData"
       responses:
         "200":
-          description: Decrypted notes
+          description: Notes for the current user
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: "#/components/schemas/TempNote"
-        "400":
-          $ref: "#/components/responses/TextError"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -660,9 +657,10 @@ components:
           type: string
           maxLength: 4096
           description: |
-            Create/decrypt: the note body. On /GetNotes and /GetNote the server
-            always returns the decrypted content (device-encrypted notes are
-            returned verbatim, without a passphrase).
+            Create/decrypt: the note body. On /GetNotes, content is included only
+            for device-encrypted notes (returned verbatim, without a passphrase)
+            and omitted for server-encrypted notes. On /GetNote the server returns
+            the decrypted content.
         encryptOnDevice:
           type: boolean
           description: Opaque-bytes mode; with true, the server never encrypts or decrypts

@@ -104,12 +104,12 @@ public class UserService {
         String username = tmpuser.getUsername().trim();
         log.info("Sign in attempt for user: {}", username);
         rateLimitService.check("signin:global", SIGNIN_GLOBAL_MAX_ATTEMPTS, SIGNIN_GLOBAL_WINDOW);
-        rateLimitService.recordFailure("signin:global", SIGNIN_GLOBAL_WINDOW);
 
         Appuser dbUser = userRepository.findByUsername(username);
         if (dbUser == null) {
             passwordEncoder.matches(tmpuser.getClearPassword(), dummyHash());
             rateLimitService.recordFailure("signin:" + username.toLowerCase(Locale.ROOT), SIGNIN_WINDOW);
+            rateLimitService.recordFailure("signin:global", SIGNIN_GLOBAL_WINDOW);
             throw new UnauthorizedException("Invalid username or password");
         }
 
@@ -117,6 +117,7 @@ public class UserService {
 
         if (dbUser.getPassword() == null || !passwordEncoder.matches(tmpuser.getClearPassword(), dbUser.getPassword())) {
             rateLimitService.recordFailure("signin:" + username.toLowerCase(Locale.ROOT), SIGNIN_WINDOW);
+            rateLimitService.recordFailure("signin:global", SIGNIN_GLOBAL_WINDOW);
             log.warn("Wrong password for user: {}", username);
             throw new UnauthorizedException("Invalid username or password");
         }

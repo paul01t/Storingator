@@ -397,9 +397,7 @@ private String createVault(String token, String platform, String password, Strin
                 .andExpect(status().isOk());
 
         MvcResult list = mvc.perform(post("/api/v1/Note/GetNotes")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("passphrase", passphrase))))
+                        .header("Authorization", "Bearer " + token))
                 .andReturn();
         String listContent = list.getResponse().getContentAsString();
         List<Map<String, Object>> entries = JsonPath.read(listContent, "$");
@@ -427,7 +425,7 @@ private String createVault(String token, String platform, String password, Strin
     }
 
     @Test
-    void serverEncryptedNoteIsDecryptedOnList() throws Exception {
+    void serverEncryptedNoteListedWithoutDecryptionThenDecryptedByGetNote() throws Exception {
         String username = uniq("notemaster");
         register(username, username + "@x.com", "pass123");
         String token = signin(username, "pass123");
@@ -435,11 +433,11 @@ private String createVault(String token, String platform, String password, Strin
         String seq = createNote(token, "todo", "Buy milk and groceries", "master", false);
 
         mvc.perform(post("/api/v1/Note/GetNotes")
-                        .header("Authorization", "Bearer " + token)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("passphrase", "master"))))
+                        .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].content").value("Buy milk and groceries"));
+                .andExpect(jsonPath("$[0].title").value("todo"))
+                .andExpect(jsonPath("$[0].encryptOnDevice").value(false))
+                .andExpect(jsonPath("$[0].content").doesNotExist());
 
         mvc.perform(post("/api/v1/Note/GetNote")
                         .header("Authorization", "Bearer " + token)
@@ -452,7 +450,7 @@ private String createVault(String token, String platform, String password, Strin
     }
 
     @Test
-    void serverEncryptedNoteListingRequiresPassphrase() throws Exception {
+    void serverEncryptedNoteListingNeedsNoPassphrase() throws Exception {
         String username = uniq("note-nopass");
         register(username, username + "@x.com", "pass123");
         String token = signin(username, "pass123");
@@ -461,7 +459,8 @@ private String createVault(String token, String platform, String password, Strin
 
         mvc.perform(post("/api/v1/Note/GetNotes")
                         .header("Authorization", "Bearer " + token))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.size()").value(1));
     }
 
     @Test
