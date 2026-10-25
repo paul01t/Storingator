@@ -108,7 +108,11 @@ public class SecurityConfig {
     }
 
     private boolean isRequestIpAllowed(HttpServletRequest request) {
-        String ip = clientIpResolver.resolve(request);
+        // Registration/account-management allowlists gate the immediate peer,
+        // which is the trusted Nginx container in Docker. Do not use the
+        // forwarded client IP here: that would make the allowlist depend on
+        // the internet client's address rather than the proxy boundary.
+        String ip = request.getRemoteAddr();
         boolean allowed = false;
         for (String entry : registrationAllowedIps.split(",")) {
             try {

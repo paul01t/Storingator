@@ -17,6 +17,6 @@ RUN groupadd --system storingator && useradd --system --gid storingator --no-cre
 COPY --from=build /app/build/libs/Storingator-0.0.1-SNAPSHOT.jar /app/app.jar
 
 USER storingator
-EXPOSE 8443
+EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
