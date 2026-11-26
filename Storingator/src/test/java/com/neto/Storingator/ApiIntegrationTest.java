@@ -126,6 +126,20 @@ private String createVault(String token, String platform, String password, Strin
     }
 
     @Test
+    void springDataRepositoriesAreNotExposed() throws Exception {
+        String username = uniq("no-rest");
+        register(username, username + "@x.com", "pass123");
+        String token = signin(username, "pass123");
+
+        for (String path : List.of("/appusers", "/notes", "/logindatas", "/activeuserses")) {
+            mvc.perform(get(path).header("Authorization", "Bearer " + token))
+                    .andExpect(status().isNotFound());
+        }
+        mvc.perform(get("/").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void localOnlyEndpointsDeniedForNonLocalhost() throws Exception {
         mvc.perform(post("/api/v1/User/New")
                         .with(request -> {

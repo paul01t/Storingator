@@ -38,9 +38,10 @@ services:
       DB_USERNAME: ${DB_USERNAME:-storingator}
       DB_PASSWORD: ${DB_PASSWORD:?Set a DB_PASSWORD in .env}
       SERVER_PORT: "8080"
+      SERVER_FORWARD_HEADERS_STRATEGY: none
       JAVA_TOOL_OPTIONS: "-XX:MaxRAMPercentage=65 -XX:InitialRAMPercentage=25"
       REQUIRE_HTTPS: "false"
-      TRUSTED_PROXY_HEADER: X-Forwarded-For
+      TRUSTED_PROXY_HEADER: X-Real-IP
       REGISTRATION_ALLOWED_IPS: ${REGISTRATION_ALLOWED_IPS:-172.30.0.2/32}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:*}
     networks:

@@ -3,11 +3,18 @@ package com.neto.Storingator.Security;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class RequestRateLimitService {
+
+    /**
+     * Hard bound on tracked clients. Without it, rotating source addresses grow this
+     * map until the capped container is OOM-killed and restart-loops. Least-recently
+     * used keys are evicted first.
+     */
+    static final int MAX_TRACKED_KEYS = 20_000;
 
     private static final class Window {
         long windowStart;
@@ -18,33 +25,25 @@ public class RequestRateLimitService {
         }
     }
 
-    private final Map<String, Window> windows = new ConcurrentHashMap<>();
+    private final Map<String, Window> windows = new LinkedHashMap<>(1024, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Window> eldest) {
+            return size() > MAX_TRACKED_KEYS;
+        }
+    };
 
-    public boolean allow(String key, int max, Duration window) {
+    public synchronized boolean allow(String key, int max, Duration window) {
         long now = System.currentTimeMillis();
         long ws = window.toMillis();
 
         Window w = windows.get(key);
-        if (w == null) {
-            Window candidate = new Window(now);
-            candidate.count = 1;
-            Window existing = windows.putIfAbsent(key, candidate);
-            if (existing == null) {
-                return 1 <= max;
-            }
-            w = existing;
+        if (w == null || now - w.windowStart >= ws) {
+            Window fresh = new Window(now);
+            fresh.count = 1;
+            windows.put(key, fresh);
+            return 1 <= max;
         }
-
-        boolean allowed;
-        synchronized (w) {
-            if (now - w.windowStart >= ws) {
-                w.windowStart = now;
-                w.count = 1;
-                return 1 <= max;
-            }
-            w.count++;
-            allowed = w.count <= max;
-        }
-        return allowed;
+        w.count++;
+        return w.count <= max;
     }
 }

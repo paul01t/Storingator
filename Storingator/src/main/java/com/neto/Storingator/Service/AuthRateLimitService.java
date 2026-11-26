@@ -6,17 +6,28 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AuthRateLimitService {
 
-    private final Map<String, Deque<Long>> windows = new ConcurrentHashMap<>();
+    /** Bound per-username/per-signup-key state under arbitrary public inputs. */
+    public static final int MAX_TRACKED_KEYS = 20_000;
 
-    public void check(String key, int maxAttempts, Duration window) {
+    private final Map<String, Deque<Long>> windows = new LinkedHashMap<>(1024, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Deque<Long>> eldest) {
+            return size() > MAX_TRACKED_KEYS;
+        }
+    };
+
+    public synchronized void check(String key, int maxAttempts, Duration window) {
         long now = System.currentTimeMillis();
-        Deque<Long> deque = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
+        Deque<Long> deque = windows.get(key);
+        if (deque == null) {
+            return;
+        }
         synchronized (deque) {
             prune(deque, now, window);
             if (deque.isEmpty()) {
@@ -28,7 +39,7 @@ public class AuthRateLimitService {
         }
     }
 
-    public void recordFailure(String key, Duration window) {
+    public synchronized void recordFailure(String key, Duration window) {
         long now = System.currentTimeMillis();
         Deque<Long> deque = windows.computeIfAbsent(key, k -> new ArrayDeque<>());
         synchronized (deque) {
